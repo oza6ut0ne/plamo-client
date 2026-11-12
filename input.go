@@ -198,9 +198,71 @@ func (e *lineEditor) deleteForward() {
 	e.line = e.line[:len(e.line)-1]
 }
 
+// killToLineStart removes the text from the beginning of the current line up
+// to the cursor, leaving the rest of the buffer intact. Following readline's
+// unix-line-discard, when the cursor already sits at the start of a line the
+// preceding newline is removed so the current line joins the previous one.
+func (e *lineEditor) killToLineStart() {
+	start := e.pos
+	for start > 0 && e.line[start-1] != '\n' {
+		start--
+	}
+	if start == e.pos && start > 0 {
+		start--
+	}
+	if start == e.pos {
+		return
+	}
+	copy(e.line[start:], e.line[e.pos:])
+	e.line = e.line[:len(e.line)-(e.pos-start)]
+	e.pos = start
+}
+
+// killToLineEnd removes the text from the cursor up to the end of the current
+// line, leaving text after that line intact. Following readline's kill-line,
+// when the cursor already sits at the end of a line the trailing newline is
+// removed so the next line joins the current one.
+func (e *lineEditor) killToLineEnd() {
+	end := e.pos
+	for end < len(e.line) && e.line[end] != '\n' {
+		end++
+	}
+	if end == e.pos && end < len(e.line) {
+		end++
+	}
+	if end == e.pos {
+		return
+	}
+	copy(e.line[e.pos:], e.line[end:])
+	e.line = e.line[:len(e.line)-(end-e.pos)]
+}
+
 func (e *lineEditor) setLine(s string) {
 	e.line = []rune(s)
 	e.pos = len(e.line)
+}
+
+// histPrev replaces the buffer with the previous history entry.
+func (e *lineEditor) histPrev() {
+	if e.histIdx > 0 {
+		e.histIdx--
+		e.setLine(e.history[e.histIdx])
+		e.render()
+	}
+}
+
+// histNext replaces the buffer with the next history entry, restoring an empty
+// buffer once the newest entry is passed.
+func (e *lineEditor) histNext() {
+	if e.histIdx < len(e.history) {
+		e.histIdx++
+		if e.histIdx == len(e.history) {
+			e.setLine("")
+		} else {
+			e.setLine(e.history[e.histIdx])
+		}
+		e.render()
+	}
 }
 
 func (e *lineEditor) reset() {
@@ -329,8 +391,10 @@ func (e *lineEditor) ReadBlock(src keyReader) (string, error) {
 				e.backspace()
 				e.render()
 			case 0x15: // Ctrl+U
-				e.line = e.line[:0]
-				e.pos = 0
+				e.killToLineStart()
+				e.render()
+			case 0x0b: // Ctrl+K
+				e.killToLineEnd()
 				e.render()
 			case 0x01: // Ctrl+A
 				e.pos = 0
@@ -348,6 +412,10 @@ func (e *lineEditor) ReadBlock(src keyReader) (string, error) {
 					e.pos++
 					e.render()
 				}
+			case 0x10: // Ctrl+P
+				e.histPrev()
+			case 0x0e: // Ctrl+N
+				e.histNext()
 			case 0x0c: // Ctrl+L
 				fmt.Fprint(e.out, "\x1b[2J\x1b[H")
 				e.lastRows, e.lastCur = 0, 0
@@ -361,21 +429,9 @@ func (e *lineEditor) ReadBlock(src keyReader) (string, error) {
 				}
 			}
 		case keyUp:
-			if e.histIdx > 0 {
-				e.histIdx--
-				e.setLine(e.history[e.histIdx])
-				e.render()
-			}
+			e.histPrev()
 		case keyDown:
-			if e.histIdx < len(e.history) {
-				e.histIdx++
-				if e.histIdx == len(e.history) {
-					e.setLine("")
-				} else {
-					e.setLine(e.history[e.histIdx])
-				}
-				e.render()
-			}
+			e.histNext()
 		case keyLeft:
 			if e.pos > 0 {
 				e.pos--
