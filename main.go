@@ -12,7 +12,6 @@ import (
 
 	"github.com/koron-go/jsonhttpc"
 	"github.com/mattn/go-isatty"
-	"github.com/peterh/liner"
 )
 
 const (
@@ -162,6 +161,16 @@ func readAllTrimmed(r io.Reader) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
+// normalizeInteractiveInput trims leading and trailing spaces from a line of
+// interactive input. Internal line breaks are kept intact so that pasted
+// multi-line text can be translated as a single block. The second return value
+// is false when the input is empty after trimming, in which case it should be
+// ignored.
+func normalizeInteractiveInput(s string) (string, bool) {
+	text := strings.TrimSpace(s)
+	return text, text != ""
+}
+
 func main() {
 	var (
 		outputLanguage string
@@ -290,17 +299,23 @@ func singleSentenceMode(textOrig, outputLanguageOrig, form string, iteration int
 }
 
 func interactiveMode(outputLanguageOrig, form string) error {
-	state := liner.NewLiner()
-	defer state.Close()
+	reader, err := newInteractiveReader(os.Stdin, os.Stdout)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
 	for {
-		line, err := state.Prompt("plamo> ")
+		line, err := reader.ReadBlock()
 		if err != nil {
-			if errors.Is(err, io.EOF) {
+			if errors.Is(err, io.EOF) || errors.Is(err, errInterrupt) {
 				return nil
 			}
 			return err
 		}
-		text := strings.TrimSpace(line)
+		text, ok := normalizeInteractiveInput(line)
+		if !ok {
+			continue
+		}
 		outputLanguage, err := regulateMode(outputLanguageOrig, text)
 		if err != nil {
 			return err
@@ -309,7 +324,6 @@ func interactiveMode(outputLanguageOrig, form string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Println(translation)
-		state.AppendHistory(text)
+		writeRawLine(os.Stdout, translation)
 	}
 }
