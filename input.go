@@ -161,6 +161,7 @@ type lineEditor struct {
 	lastCur  int
 	history  []string
 	histIdx  int
+	draft    string
 }
 
 func newLineEditor(prompt string, width int, out io.Writer) *lineEditor {
@@ -242,8 +243,13 @@ func (e *lineEditor) setLine(s string) {
 	e.pos = len(e.line)
 }
 
-// histPrev replaces the buffer with the previous history entry.
+// histPrev replaces the buffer with the previous history entry. When leaving
+// the live buffer for the first time, the current input is stashed so it can
+// be restored by histNext.
 func (e *lineEditor) histPrev() {
+	if e.histIdx == len(e.history) {
+		e.draft = string(e.line)
+	}
 	if e.histIdx > 0 {
 		e.histIdx--
 		e.setLine(e.history[e.histIdx])
@@ -251,13 +257,13 @@ func (e *lineEditor) histPrev() {
 	}
 }
 
-// histNext replaces the buffer with the next history entry, restoring an empty
-// buffer once the newest entry is passed.
+// histNext replaces the buffer with the next history entry. Once the newest
+// entry is passed, the unsent input stashed by histPrev is restored.
 func (e *lineEditor) histNext() {
 	if e.histIdx < len(e.history) {
 		e.histIdx++
 		if e.histIdx == len(e.history) {
-			e.setLine("")
+			e.setLine(e.draft)
 		} else {
 			e.setLine(e.history[e.histIdx])
 		}
@@ -328,6 +334,7 @@ func (e *lineEditor) reset() {
 	e.line = e.line[:0]
 	e.pos = 0
 	e.histIdx = len(e.history)
+	e.draft = ""
 	e.lastRows, e.lastCur = 0, 0
 }
 
