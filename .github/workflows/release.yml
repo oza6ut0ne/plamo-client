@@ -26,7 +26,6 @@ jobs:
           - { os: ubuntu-latest,  goos: darwin,  goarch: arm64    }
           - { os: windows-latest, goos: windows, goarch: 386      }
           - { os: windows-latest, goos: windows, goarch: amd64    }
-          - { os: windows-latest, goos: windows, goarch: arm      }
           - { os: windows-latest, goos: windows, goarch: arm64    }
     steps:
       - uses: actions/checkout@v2
