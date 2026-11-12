@@ -3,29 +3,24 @@ package main
 import (
 	"bytes"
 	_ "embed"
-	"fmt"
-	"regexp"
 	"strings"
 	"text/template"
 )
 
 const (
-	EnglishToJapanese = "English to Japanese"
-	JapaneseToEnglish = "Japanese to English"
+	Japanese = "ja"
+	English  = "en"
 )
 
-var rxEtoJ = regexp.MustCompile(`(?i:e.*(?:to|2).*j)`)
-var rxJtoE = regexp.MustCompile(`(?i:j.*(?:to|2).*e)`)
-
 func regulateMode(mode string, content string) (string, error) {
-	if strings.EqualFold(mode, EnglishToJapanese) || rxEtoJ.MatchString(mode) {
-		return EnglishToJapanese, nil
+	if strings.EqualFold(mode, Japanese) {
+		return Japanese, nil
 	}
-	if strings.EqualFold(mode, JapaneseToEnglish) || rxJtoE.MatchString(mode) {
-		return JapaneseToEnglish, nil
+	if strings.EqualFold(mode, English) {
+		return English, nil
 	}
 	if mode != "" && !strings.EqualFold(mode, "auto") {
-		return "", fmt.Errorf("invalid mode: %s", mode)
+		return mode, nil
 	}
 
 	var total, ascii int64
@@ -40,43 +35,36 @@ func regulateMode(mode string, content string) (string, error) {
 
 	//log.Printf("ascii=%d total=%d\n", ascii, total)
 	if ascii < 3*total/4 {
-		return JapaneseToEnglish, nil
+		return English, nil
 	}
-	return EnglishToJapanese, nil
+	return Japanese, nil
 }
 
 // Available styles.
 // See also https://huggingface.co/webbigdata/C3TR-Adapter/discussions/1#669e6ef419d0f96d8a77128b
 const (
-	Casual               = "casual"
-	Formal               = "formal"
-	Technical            = "technical"
-	Journalistic         = "journalistic"
-	WebFiction           = "web-fiction"
-	Business             = "business"
-	NSFW                 = "nsfw"
-	EducationalCasual    = "educational-casual"
-	AcademicPresentation = "academic-presentation"
-	Slang                = "slang"
-	SNSCasual            = "sns-casual"
+	None         = "none"
+	Plain        = "plain"
+	Polite       = "polite"
+	NonePrompt   = ""
+	PlainPrompt  = "<|plamo:key|>form<|plamo:val|>plain"
+	PolitePrompt = "<|plamo:key|>form<|plamo:val|>polite"
 )
 
-var ValidWritingStyles = []string{
-	Casual,
-	Formal,
-	Technical,
-	Journalistic,
-	WebFiction,
-	Business,
-	NSFW,
-	EducationalCasual,
-	AcademicPresentation,
-	Slang,
-	SNSCasual,
+var FormPrompt = map[string]string{
+	None:   NonePrompt,
+	Plain:  PlainPrompt,
+	Polite: PolitePrompt,
 }
 
-func IsValidWritingStyles(s string) bool {
-	for _, valid := range ValidWritingStyles {
+var ValidForm = []string{
+	None,
+	Plain,
+	Polite,
+}
+
+func IsValidForm(s string) bool {
+	for _, valid := range ValidForm {
 		if s == valid {
 			return true
 		}
@@ -85,10 +73,17 @@ func IsValidWritingStyles(s string) bool {
 }
 
 type PromptParam struct {
-	Mode         string
-	WritingStyle string
-	Styles       map[string]string
-	Content      string
+	OutputLanguage string
+	Form           string
+	Content        string
+}
+
+func NewPromptParam(outputLanguage string, form string, content string) *PromptParam {
+	return &PromptParam{
+		OutputLanguage: outputLanguage,
+		Form:           FormPrompt[form],
+		Content:        content,
+	}
 }
 
 //go:embed prompt.tmpl

@@ -1,4 +1,4 @@
-module github.com/koron/c3tr-client
+module github.com/oza6ut0ne/plamo-client
 
 go 1.26.0
 

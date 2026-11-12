@@ -15,6 +15,11 @@ import (
 	"github.com/peterh/liner"
 )
 
+const (
+	Model_0_8B = "hf.co/pfnet/plamo-3-translate-0.8b-GGUF"
+	Model_2B   = "hf.co/pfnet/plamo-3-translate-2b-GGUF"
+)
+
 type Request struct {
 	Prompt string `json:"prompt"`
 
@@ -99,23 +104,20 @@ type Response struct {
 var (
 	verbose    bool
 	entrypoint string
+	twoB       bool
 
 	reqTmpl Request
 )
 
-func translate(text string, mode string, writingStyle string, subStyles map[string]string) (string, error) {
-	param := PromptParam{
-		Mode:         mode,
-		WritingStyle: writingStyle,
-		Content:      text,
-	}
+func translate(text string, outputLanguage string, form string) (string, error) {
+	param := NewPromptParam(outputLanguage, form, text)
 	prompt, err := param.Generate()
 	if err != nil {
 		return "", fmt.Errorf("failed to generate prompt: %w", err)
 	}
 
 	if verbose {
-		log.Printf("mode is %q", param.Mode)
+		log.Printf("outputLanguage is %q", param.OutputLanguage)
 		log.Printf("prompt is... %q", prompt)
 	}
 
@@ -131,12 +133,12 @@ func translate(text string, mode string, writingStyle string, subStyles map[stri
 
 func reverseMode(mode string) string {
 	switch mode {
-	case EnglishToJapanese:
-		return JapaneseToEnglish
-	case JapaneseToEnglish:
-		return EnglishToJapanese
+	case Japanese:
+		return English
+	case English:
+		return Japanese
 	default:
-		return EnglishToJapanese
+		return Japanese
 	}
 }
 
@@ -150,19 +152,20 @@ func canBeInteractive() bool {
 
 func main() {
 	var (
-		modeOpt   string
-		wstyleOpt string
-		iteration int
+		outputLanguage string
+		form           string
+		iteration      int
 	)
 
 	// Core options.
 	flag.BoolVar(&verbose, "verbose", false, `verbose messages`)
 	flag.StringVar(&entrypoint, "entrypoint", "http://127.0.0.1:11434/v1/completions", `entrypoint`)
-	flag.StringVar(&modeOpt, "mode", "", `translation mode: EtoJ, JtoE or auto (default)`)
-	flag.StringVar(&wstyleOpt, "writingstyle", Technical, `writing style`)
+	flag.StringVar(&outputLanguage, "lang", "", `output language`)
+	flag.StringVar(&form, "form", Polite, `writing style`)
+	flag.BoolVar(&twoB, "2b", false, `use 2b model`)
 
 	// Request options.
-	flag.StringVar(&reqTmpl.Model, "model", "hf.co/webbigdata/C3TR-Adapter_gguf", `model name`)
+	flag.StringVar(&reqTmpl.Model, "model", Model_0_8B, `model name`)
 	flag.IntVar(&reqTmpl.NPredict, "n_predict", -1, `number of predict`)
 	flag.Float64Var(&reqTmpl.RepeatPenalty, "repeat_penalty", 1.0, `repeat penalty`)
 	flag.Float64Var(&reqTmpl.Temperature, "temperature", 0.0, `temperature`)
@@ -173,10 +176,14 @@ func main() {
 
 	flag.Parse()
 
+	if twoB && strings.EqualFold(reqTmpl.Model, Model_0_8B) {
+		reqTmpl.Model = Model_2B
+	}
+
 	// Validate option values.
-	if !IsValidWritingStyles(wstyleOpt) {
-		log.Fatalf("unknown %q writingstyle. please choose one from following: %s",
-			wstyleOpt, strings.Join(ValidWritingStyles, ", "))
+	if !IsValidForm(form) {
+		log.Fatalf("unknown %q form. please choose one from following: %s",
+			form, strings.Join(ValidForm, ", "))
 	}
 
 	// Start interative translation mode, if without any arguments and the
@@ -185,14 +192,14 @@ func main() {
 		if !canBeInteractive() {
 			log.Fatal("no text to translate. for enabling interactive mode, do not use pipes nor redirects")
 		}
-		err := interactiveMode(modeOpt, wstyleOpt, nil)
+		err := interactiveMode(outputLanguage, form)
 		if err != nil {
 			log.Fatal(err)
 		}
 		return
 	}
 
-	err := singleSentenceMode(flag.Arg(0), modeOpt, wstyleOpt, nil, iteration)
+	err := singleSentenceMode(flag.Arg(0), outputLanguage, form, iteration)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -200,16 +207,16 @@ func main() {
 
 // Operation mode implementations
 
-func singleSentenceMode(textOrig, modeOrig, wstyle string, subStyles map[string]string, iteration int) error {
+func singleSentenceMode(textOrig, outputLanguageOrig, form string, iteration int) error {
 	text := strings.TrimSpace(textOrig)
-	mode, err := regulateMode(modeOrig, text)
+	outputLanguage, err := regulateMode(outputLanguageOrig, text)
 	if err != nil {
 		return err
 	}
 
 	// One-shot translation.
 	if iteration == 0 {
-		translation, err := translate(text, mode, wstyle, subStyles)
+		translation, err := translate(text, outputLanguage, form)
 		if err != nil {
 			return err
 		}
@@ -220,13 +227,13 @@ func singleSentenceMode(textOrig, modeOrig, wstyle string, subStyles map[string]
 	// Repeat the translation with specifying the number of times.
 	if iteration > 0 {
 		for i := range iteration + 1 {
-			translation, err := translate(text, mode, wstyle, subStyles)
+			translation, err := translate(text, outputLanguage, form)
 			if err != nil {
 				return fmt.Errorf("failed at #%d: %w", i, err)
 			}
 			fmt.Printf("#%d\t%s\n", i, translation)
 			text = translation
-			mode = reverseMode(mode)
+			outputLanguage = reverseMode(outputLanguage)
 		}
 		return nil
 	}
@@ -238,22 +245,22 @@ func singleSentenceMode(textOrig, modeOrig, wstyle string, subStyles map[string]
 			break
 		}
 		seen[text] = struct{}{}
-		translation, err := translate(text, mode, wstyle, subStyles)
+		translation, err := translate(text, outputLanguage, form)
 		if err != nil {
 			log.Fatalf("failed at #%d: %s", i, err)
 		}
 		fmt.Printf("#%d\t%s\n", i, translation)
 		text = translation
-		mode = reverseMode(mode)
+		outputLanguage = reverseMode(outputLanguage)
 	}
 	return nil
 }
 
-func interactiveMode(modeOrig, writingStyle string, subStyles map[string]string) error {
+func interactiveMode(outputLanguageOrig, form string) error {
 	state := liner.NewLiner()
 	defer state.Close()
 	for {
-		line, err := state.Prompt("c3tr> ")
+		line, err := state.Prompt("plamo> ")
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				return nil
@@ -261,11 +268,11 @@ func interactiveMode(modeOrig, writingStyle string, subStyles map[string]string)
 			return err
 		}
 		text := strings.TrimSpace(line)
-		mode, err := regulateMode(modeOrig, text)
+		outputLanguage, err := regulateMode(outputLanguageOrig, text)
 		if err != nil {
 			return err
 		}
-		translation, err := translate(text, mode, writingStyle, nil)
+		translation, err := translate(text, outputLanguage, form)
 		if err != nil {
 			return err
 		}
