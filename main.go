@@ -152,6 +152,16 @@ func canBeInteractive() bool {
 	return isTerminal(os.Stdin.Fd()) && isTerminal(os.Stdout.Fd())
 }
 
+// readAllTrimmed reads all of r and returns the content with leading and
+// trailing spaces trimmed.
+func readAllTrimmed(r io.Reader) (string, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
 func main() {
 	var (
 		outputLanguage string
@@ -191,21 +201,36 @@ func main() {
 			form, strings.Join(ValidForm, ", "))
 	}
 
-	// Start interative translation mode, if without any arguments and the
-	// os.Stdin and os.Stdout are connected a TTY.
-	if flag.NArg() == 0 {
-		if !canBeInteractive() {
-			log.Fatal("no text to translate. for enabling interactive mode, do not use pipes nor redirects")
-		}
-		err := interactiveMode(outputLanguage, form)
+	// Translate the text given by the argument, if any. The argument takes
+	// precedence over standard input.
+	if flag.NArg() > 0 {
+		err := singleSentenceMode(flag.Arg(0), outputLanguage, form, iteration)
 		if err != nil {
 			log.Fatal(err)
 		}
 		return
 	}
 
-	err := singleSentenceMode(flag.Arg(0), outputLanguage, form, iteration)
-	if err != nil {
+	// Translate the text piped or redirected to standard input as a single
+	// block.
+	if !isTerminal(os.Stdin.Fd()) {
+		text, err := readAllTrimmed(os.Stdin)
+		if err != nil {
+			log.Fatal(err)
+		}
+		err = singleSentenceMode(text, outputLanguage, form, iteration)
+		if err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
+	// Start interactive translation mode, if the os.Stdin and os.Stdout are
+	// connected a TTY.
+	if !canBeInteractive() {
+		log.Fatal("cannot start interactive mode: standard output is not a terminal")
+	}
+	if err := interactiveMode(outputLanguage, form); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -214,6 +239,9 @@ func main() {
 
 func singleSentenceMode(textOrig, outputLanguageOrig, form string, iteration int) error {
 	text := strings.TrimSpace(textOrig)
+	if text == "" {
+		return errors.New("no text to translate")
+	}
 	outputLanguage, err := regulateMode(outputLanguageOrig, text)
 	if err != nil {
 		return err
