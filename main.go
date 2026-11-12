@@ -102,11 +102,13 @@ type Response struct {
 }
 
 var (
-	verbose    bool
-	entrypoint string
-	twoB       bool
+	verbose bool
+	host    string
+	port    int
+	twoB    bool
 
-	reqTmpl Request
+	entrypoint string
+	reqTmpl    Request
 )
 
 func translate(text string, outputLanguage string, form string) (string, error) {
@@ -159,7 +161,8 @@ func main() {
 
 	// Core options.
 	flag.BoolVar(&verbose, "verbose", false, `verbose messages`)
-	flag.StringVar(&entrypoint, "entrypoint", "http://127.0.0.1:11434/v1/completions", `entrypoint`)
+	flag.StringVar(&host, "host", "127.0.0.1", `Ollama host`)
+	flag.IntVar(&port, "port", 11434, `Ollama port`)
 	flag.StringVar(&outputLanguage, "lang", "", `output language`)
 	flag.StringVar(&form, "form", Polite, `writing style`)
 	flag.BoolVar(&twoB, "2b", false, `use 2b model`)
@@ -175,6 +178,8 @@ func main() {
 	flag.IntVar(&iteration, "iteration", 0, "number of times to repeat the reverse translation. -1 means to repeat until the translation matches the translation history.")
 
 	flag.Parse()
+
+	entrypoint = fmt.Sprintf("http://%s:%d/v1/completions", host, port)
 
 	if twoB && strings.EqualFold(reqTmpl.Model, Model_0_8B) {
 		reqTmpl.Model = Model_2B
