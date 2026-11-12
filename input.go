@@ -265,6 +265,65 @@ func (e *lineEditor) histNext() {
 	}
 }
 
+// lineStart returns the index just after the newline that starts the line
+// containing pos, or 0 when pos is on the first line.
+func (e *lineEditor) lineStart(pos int) int {
+	for i := pos; i > 0; i-- {
+		if e.line[i-1] == '\n' {
+			return i
+		}
+	}
+	return 0
+}
+
+// lineEnd returns the index of the newline that ends the line containing pos,
+// or len(e.line) when pos is on the last line.
+func (e *lineEditor) lineEnd(pos int) int {
+	for i := pos; i < len(e.line); i++ {
+		if e.line[i] == '\n' {
+			return i
+		}
+	}
+	return len(e.line)
+}
+
+// moveUp moves the cursor to the same column on the previous line. It reports
+// whether the cursor actually moved, so that the caller can fall back to
+// history navigation when the cursor is already on the first line.
+func (e *lineEditor) moveUp() bool {
+	start := e.lineStart(e.pos)
+	if start == 0 {
+		return false
+	}
+	prevEnd := start - 1
+	prevStart := e.lineStart(prevEnd)
+	newPos := prevStart + (e.pos - start)
+	if newPos > prevEnd {
+		newPos = prevEnd
+	}
+	e.pos = newPos
+	return true
+}
+
+// moveDown moves the cursor to the same column on the next line. It reports
+// whether the cursor actually moved, so that the caller can fall back to
+// history navigation when the cursor is already on the last line.
+func (e *lineEditor) moveDown() bool {
+	end := e.lineEnd(e.pos)
+	if end >= len(e.line) {
+		return false
+	}
+	start := e.lineStart(e.pos)
+	nextStart := end + 1
+	nextEnd := e.lineEnd(nextStart)
+	newPos := nextStart + (e.pos - start)
+	if newPos > nextEnd {
+		newPos = nextEnd
+	}
+	e.pos = newPos
+	return true
+}
+
 func (e *lineEditor) reset() {
 	e.line = e.line[:0]
 	e.pos = 0
@@ -429,9 +488,17 @@ func (e *lineEditor) ReadBlock(src keyReader) (string, error) {
 				}
 			}
 		case keyUp:
-			e.histPrev()
+			if e.moveUp() {
+				e.render()
+			} else {
+				e.histPrev()
+			}
 		case keyDown:
-			e.histNext()
+			if e.moveDown() {
+				e.render()
+			} else {
+				e.histNext()
+			}
 		case keyLeft:
 			if e.pos > 0 {
 				e.pos--
