@@ -183,7 +183,7 @@ func main() {
 	flag.StringVar(&host, "host", "127.0.0.1", `Ollama host`)
 	flag.IntVar(&port, "port", 11434, `Ollama port`)
 	flag.StringVar(&outputLanguage, "lang", "", `output language`)
-	flag.StringVar(&form, "form", Polite, `writing style`)
+	flag.StringVar(&form, "form", None, `writing style`)
 	flag.BoolVar(&twoB, "2b", false, `use 2b model`)
 
 	// Request options.
